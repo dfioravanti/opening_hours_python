@@ -9,6 +9,9 @@ from typing import Dict, List, Optional, Union
 
 
 class ValidationError(Exception):
+    """
+    Exception used to signal that it was not possible to process the JSON input
+    """
     pass
 
 
@@ -35,6 +38,9 @@ WEEK = [Day.MONDAY, Day.TUESDAY, Day.WEDNESDAY,
 
 
 class Status(Enum):
+    """
+    Enum used to represent the possible status of the restaurant.
+    """
     OPEN = auto()
     CLOSE = auto()
 
@@ -43,28 +49,21 @@ class Status(Enum):
 class Timeslot:
     """
     Class used to represent a timeslot where the restourant is open.
-
-    internally we represent a timeslot as a pain of time object where we care only about
-        * hour
-        * second
-        * second
     """
     opening: time
     closing: time
 
-    @ classmethod
+    @classmethod
     def from_timestamps(cls, opening_timestamp: int, closing_timestamp: int) -> Timeslot:
         """
-        Create an object from a pair of unix timestamps.
-
-        The timestamps are assumed having as date 1.1.1970 which can be discarded
+        Create an object from a pair of timestamps that represent the number of seconds from midnight.
 
         Parameters
         ----------
         opening_timestamp : int
-            timestamp of the opening time
+            timestamp of the opening time in seconds from midnight
         closing_timestamp : int
-            timestamp of the closing time
+            timestamp of the closing time in seconds from midnight
 
         Returns
         -------
@@ -148,7 +147,7 @@ def prettify_timeslots(json_input: str) -> Dict[str, str]:
     # This allows us to establish some invariants on the data:
     # Each opening should be followed by a closing
     # There are no repeated opening/closing
-    # If a day has only one closing then the restourant is closed
+    # If a day has only one closing then the restourant is closed for that day
     inputs: Inputs = {}
     for raw_day, raw_values in raw_inputs.items():
         day = Day[raw_day.upper()]
@@ -166,12 +165,16 @@ def prettify_timeslots(json_input: str) -> Dict[str, str]:
     # so we need walk tough the week in the correct order.
     # We could sort the dictionary but that would be more expensive.
     for day in WEEK:
+        # days where there are no entries are considered as days where the restaurant is closed.
         entries = inputs.get(day, [])
         timeslots[day] = []
 
         for i, entry in enumerate(entries):
             # Validate the current input and check if we have back to back opening and closing
-            current_status = Status[entry['type'].upper()]
+            try:
+                current_status = Status[entry['type'].upper()]
+            except ValueError:
+                raise ValidationError(f"We expected a weekday, instead we got {entry['type']}")
             if current_status == previous_status:
                 raise ValidationError(
                     f"On {(day)} the opening hours have a repeated {previous_status} status")
@@ -208,7 +211,7 @@ def prettify_timeslots(json_input: str) -> Dict[str, str]:
             "The first action on Monday is close but there is no matching opening on Sunday.")
 
     # As we can have opening and closing that span multiple days with the current implementation
-    # we cannot do the string coversions inside the previous loop.
+    # we cannot do the string conversions inside the previous loop.
     # As there are only seven days in a week this is not too computationally expensive but we might need to refactor
     # this behavior if the service needs to scale up to massive scale.
     output = {}
